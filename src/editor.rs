@@ -1,8 +1,4 @@
-use crossterm::event::{
-    read,
-    Event::{self, Key},
-    KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
-};
+use crossterm::event::{read, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use std::{cmp::min, env, io::Error};
 
@@ -49,7 +45,7 @@ impl Editor {
                 break;
             }
             let event = read()?;
-            self.evaluate_event(&event)?;
+            self.evaluate_event(event)?;
         }
 
         Ok(())
@@ -80,31 +76,35 @@ impl Editor {
         Ok(())
     }
 
-    fn evaluate_event(&mut self, event: &Event) -> Result<(), Error> {
-        if let Key(KeyEvent {
-            code,
-            modifiers,
-            kind: KeyEventKind::Press,
-            ..
-        }) = event
-        {
-            if *modifiers == KeyModifiers::CONTROL {
-                match code {
-                    KeyCode::Char('q') => {
-                        self.should_quit = true;
-                    }
-                    KeyCode::Char('h' | 'j' | 'k' | 'l') => {
-                        self.move_point(*code)?;
-                    }
-                    _ => (),
+    fn evaluate_event(&mut self, event: Event) -> Result<(), Error> {
+        match event {
+            Event::Key(KeyEvent {
+                code,
+                modifiers,
+                kind: KeyEventKind::Press,
+                ..
+            }) => match (code, modifiers) {
+                (KeyCode::Char('q'), KeyModifiers::CONTROL) => {
+                    self.should_quit = true;
                 }
+                (KeyCode::Char('h' | 'j' | 'k' | 'l'), KeyModifiers::CONTROL) => {
+                    self.move_point(code)?;
+                }
+                _ => (),
+            },
+            Event::Resize(width_u16, height_u16) => {
+                let height = height_u16 as usize;
+                let width = width_u16 as usize;
+
+                self.view.resize(Size { width, height });
             }
+            _ => (),
         }
 
         Ok(())
     }
 
-    fn refresh_screen(&self) -> Result<(), Error> {
+    fn refresh_screen(&mut self) -> Result<(), Error> {
         Terminal::hide_cursor()?;
         Terminal::move_cursor_to(Position::default())?;
         if self.should_quit {

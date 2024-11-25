@@ -1,77 +1,84 @@
-use super::terminal::{Size, Terminal};
+use super::terminal::{Position, Size, Terminal};
 use std::io::Error;
 
 pub mod buffer;
 use buffer::Buffer;
 
-#[derive(Default)]
 pub struct View {
-    pub buffer: Buffer,
+    buffer: Buffer,
+    needs_redraw: bool,
+    size: Size,
+}
+
+impl Default for View {
+    fn default() -> Self {
+        Self {
+            buffer: Buffer::default(),
+            needs_redraw: true,
+            size: Terminal::size().unwrap_or_default(),
+        }
+    }
 }
 
 impl View {
-    pub fn load(&mut self, file_name: &String) {
+    pub fn resize(&mut self, to: Size) {
+        self.size = to;
+        self.needs_redraw = true;
+    }
+
+    fn render_line(at: usize, line_text: &str) -> Result<(), Error> {
+        Terminal::move_cursor_to(Position { row: at, col: 0 })?;
+        Terminal::clear_line()?;
+        Terminal::print(line_text)?;
+
+        Ok(())
+    }
+
+    pub fn load(&mut self, file_name: &str) {
         if let Ok(buffer) = Buffer::load(file_name) {
             self.buffer = buffer;
+            self.needs_redraw = true;
         }
     }
-    pub fn render_welcome() -> Result<(), Error> {
-        let Size { height, .. } = Terminal::size()?;
 
-        for current_row in 0..height {
-            Terminal::clear_line()?;
-
-            if current_row == height / 3 {
-                Self::draw_welcome_msg()?;
-            } else {
-                Terminal::print("~")?;
-            }
-
-            if current_row + 1 < height {
-                Terminal::print("\r\n")?;
-            }
+    pub fn render(&mut self) -> Result<(), Error> {
+        if !self.needs_redraw {
+            return Ok(());
         }
 
-        Ok(())
-    }
-    pub fn render_buffer(&self) -> Result<(), Error> {
-        let Size { height, .. } = Terminal::size()?;
+        let Size { height, width } = self.size;
+
+        if height == 0 || width == 0 {
+            return Ok(());
+        }
 
         for current_row in 0..height {
-            Terminal::clear_line()?;
-
             if let Some(line) = self.buffer.lines.get(current_row) {
-                Terminal::print(line)?;
+                let truncated_line = if line.len() >= width {
+                    &line[0..width]
+                } else {
+                    line
+                };
+
+                Self::render_line(current_row, truncated_line)?;
+            } else if current_row == height / 3 && self.buffer.is_empty() {
+                Self::render_line(current_row, &Self::build_welcome_msg()?)?;
             } else {
-                Terminal::print("~")?;
-            }
-
-            if current_row + 1 < height {
-                Terminal::print("\r\n")?;
+                Self::render_line(current_row, "~")?;
             }
         }
 
-        Ok(())
-    }
-    pub fn render(&self) -> Result<(), Error> {
-        if self.buffer.is_empty() {
-            Self::render_welcome()?;
-        } else {
-            self.render_buffer()?;
-        }
+        self.needs_redraw = false;
         Ok(())
     }
 
-    fn draw_welcome_msg() -> Result<(), Error> {
+    fn build_welcome_msg() -> Result<String, Error> {
         let Size { width, .. } = Terminal::size()?;
         let welcome_msg = "Welcome to Hecto v1.0.0";
         let len = welcome_msg.len();
 
         let padding = " ".repeat((width / 2).saturating_sub(len / 2));
 
-        let line = format!("~{padding}{welcome_msg}");
-
-        Terminal::print(&line)?;
-        Ok(())
+        Ok(format!("~{padding}{welcome_msg}"))
     }
 }
